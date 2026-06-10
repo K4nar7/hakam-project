@@ -50,7 +50,7 @@ function Hakam() {
     setSessionId(null);
     setBusy(true);
     setTone("working");
-    setStatus("Uploading & converting…");
+    setStatus("Preparing your video…");
 
     try {
       const { session_id, video_url } = await uploadVideo(file);
@@ -106,7 +106,12 @@ function Hakam() {
       <Header />
       <main className="mx-auto grid max-w-7xl gap-5 px-6 py-6 lg:h-[calc(100vh-4rem)] lg:grid-cols-[1.15fr_1fr] lg:py-5">
         <section className="min-h-[420px] lg:min-h-0">
-          <VideoPanel videoUrl={videoUrl} onFile={handleFile} disabled={busy} />
+          <VideoPanel
+            videoUrl={videoUrl}
+            onFile={handleFile}
+            loading={busy && !sessionId}
+            disabled={busy}
+          />
         </section>
         <section className="min-h-[520px] lg:min-h-0">
           <ChatPanel

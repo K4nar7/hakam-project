@@ -1,23 +1,31 @@
-import { useCallback, useRef, useState, type DragEvent } from "react";
-import { Film, Upload, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { Film, Upload, AlertTriangle, Loader2 } from "lucide-react";
 
 interface Props {
   videoUrl: string | null;
   onFile: (file: File) => void;
+  /** True while the file is uploading / transcoding on the server. */
+  loading?: boolean;
   disabled?: boolean;
 }
 
 const MEDIA_ERR: Record<number, string> = {
-  1: "Playback aborted.",
-  2: "Network error while loading the video.",
-  3: "Decode error — the file is corrupt or partially downloaded.",
-  4: "This video format/codec isn't supported by the browser (e.g. HEVC/H.265, MKV, AVI). Re-encode to H.264 MP4 to preview it here.",
+  1: "Playback was interrupted.",
+  2: "Couldn't load the video — check the connection and try again.",
+  3: "This file looks corrupted and can't be decoded.",
+  4: "This clip's format can't be played here. The analysis still ran — keep chatting about it below.",
 };
 
-export function VideoPanel({ videoUrl, onFile, disabled }: Props) {
+export function VideoPanel({ videoUrl, onFile, loading, disabled }: Props) {
   const [dragOver, setDragOver] = useState(false);
   const [playError, setPlayError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Clear any stale playback error whenever the source changes or a new
+  // upload begins, so the warning never lingers across clips.
+  useEffect(() => {
+    setPlayError(null);
+  }, [videoUrl, loading]);
 
   const handleDrop = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
@@ -38,7 +46,7 @@ export function VideoPanel({ videoUrl, onFile, disabled }: Props) {
 
       {videoUrl ? (
         <div className="flex flex-1 flex-col gap-3">
-          <div className="relative flex-1">
+          <div className="relative flex-1 overflow-hidden rounded-xl bg-black shadow-[var(--shadow-elegant)]">
             <video
               key={videoUrl}
               src={videoUrl}
@@ -46,22 +54,38 @@ export function VideoPanel({ videoUrl, onFile, disabled }: Props) {
               preload="auto"
               playsInline
               onError={(e) => {
+                // Suppress errors from the temporary blob while the server is
+                // still converting — the playable copy is on its way.
+                if (loading) return;
                 const code = e.currentTarget.error?.code ?? 0;
-                setPlayError(MEDIA_ERR[code] ?? "Unknown playback error.");
+                setPlayError(MEDIA_ERR[code] ?? "This clip couldn't be played here.");
               }}
               onLoadedData={() => setPlayError(null)}
-              className="h-full w-full rounded-xl bg-black object-contain shadow-[var(--shadow-elegant)]"
+              className="h-full w-full object-contain"
             />
-            {playError && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/80 p-6 text-center">
-                <AlertTriangle className="h-6 w-6 text-destructive" />
-                <p className="text-sm text-foreground">{playError}</p>
+
+            {/* Calm converting state — replaces the old red flash */}
+            {loading && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm">
+                <Loader2 className="h-7 w-7 animate-spin text-primary" />
+                <p className="text-sm font-medium text-foreground">
+                  Preparing your video…
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  The upload still worked — you can keep chatting about the clip.
+                  Converting for smooth playback
                 </p>
               </div>
             )}
+
+            {/* Genuine playback failure — only after conversion settled */}
+            {!loading && playError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/80 p-6 text-center">
+                <AlertTriangle className="h-6 w-6 text-muted-foreground" />
+                <p className="max-w-sm text-sm text-foreground">{playError}</p>
+              </div>
+            )}
           </div>
+
           <button
             onClick={() => inputRef.current?.click()}
             disabled={disabled}
@@ -93,7 +117,7 @@ export function VideoPanel({ videoUrl, onFile, disabled }: Props) {
               Drop a video to begin
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              or click to browse · MP4 (H.264) plays best
+              or click to browse · MP4, MOV, MKV, WEBM
             </p>
           </div>
         </div>
