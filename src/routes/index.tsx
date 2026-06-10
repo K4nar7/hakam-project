@@ -13,7 +13,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Hakam analyzes your videos with a fine-tuned Qwen3.5 + SportsQA LoRA model. Upload a clip and chat about what's happening.",
+          "Hakam analyzes your videos with a fine-tuned Qwen3.5 + SportsQA LoRA model.",
       },
     ],
   }),
@@ -28,36 +28,45 @@ function Hakam() {
   const [status, setStatus] = useState("Awaiting video…");
   const [tone, setTone] = useState<Tone>("idle");
   const [busy, setBusy] = useState(false);
-  const objectUrlRef = useRef<string | null>(null);
+  const blobRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    };
-  }, []);
+  useEffect(
+    () => () => {
+      if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+    },
+    [],
+  );
 
   const handleFile = async (file: File) => {
-    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
-    const url = URL.createObjectURL(file);
-    objectUrlRef.current = url;
-    setVideoUrl(url);
+    if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+    // Show the local blob instantly for fast feedback. If the codec is
+    // browser-playable it just works; if not, we swap to the server's
+    // transcoded MP4 once the upload returns.
+    const blob = URL.createObjectURL(file);
+    blobRef.current = blob;
+    setVideoUrl(blob);
+
     setMessages([]);
     setSessionId(null);
     setBusy(true);
     setTone("working");
-    setStatus("Processing video payload…");
+    setStatus("Uploading & converting…");
 
     try {
-      setTimeout(() => setStatus("Analyzing frames…"), 600);
-      const { session_id } = await uploadVideo(file);
+      const { session_id, video_url } = await uploadVideo(file);
       setSessionId(session_id);
+      // Prefer the server's H.264 copy — guaranteed browser-playable.
+      if (video_url) {
+        setVideoUrl(video_url);
+        if (blobRef.current) {
+          URL.revokeObjectURL(blobRef.current);
+          blobRef.current = null;
+        }
+      }
       setStatus("Ready for questions");
       setTone("ready");
     } catch (e) {
-      console.error(e);
-      setStatus(
-        e instanceof Error ? `Upload failed: ${e.message}` : "Upload failed",
-      );
+      setStatus(e instanceof Error ? e.message : "Upload failed");
       setTone("error");
     } finally {
       setBusy(false);
@@ -66,15 +75,13 @@ function Hakam() {
 
   const handleSend = async (text: string) => {
     if (!sessionId) return;
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: text,
-    };
-    setMessages((m) => [...m, userMsg]);
+    setMessages((m) => [
+      ...m,
+      { id: crypto.randomUUID(), role: "user", content: text },
+    ]);
     setBusy(true);
     setTone("working");
-    setStatus("Hakam is thinking…");
+    setStatus("Thinking…");
 
     try {
       const { response } = await sendChat(sessionId, text);
@@ -85,10 +92,7 @@ function Hakam() {
       setStatus("Ready for questions");
       setTone("ready");
     } catch (e) {
-      console.error(e);
-      setStatus(
-        e instanceof Error ? `Inference error: ${e.message}` : "Inference error",
-      );
+      setStatus(e instanceof Error ? e.message : "Inference error");
       setTone("error");
     } finally {
       setBusy(false);
@@ -102,11 +106,7 @@ function Hakam() {
       <Header />
       <main className="mx-auto grid max-w-7xl gap-5 px-6 py-6 lg:h-[calc(100vh-4rem)] lg:grid-cols-[1.15fr_1fr] lg:py-5">
         <section className="min-h-[420px] lg:min-h-0">
-          <VideoPanel
-            videoUrl={videoUrl}
-            onFile={handleFile}
-            disabled={busy}
-          />
+          <VideoPanel videoUrl={videoUrl} onFile={handleFile} disabled={busy} />
         </section>
         <section className="min-h-[520px] lg:min-h-0">
           <ChatPanel

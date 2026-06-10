@@ -1,8 +1,8 @@
-// Base URL for the Hakam FastAPI backend.
-// Set VITE_HAKAM_API_URL in your environment (e.g. an HF Space URL).
+// Hakam backend (FastAPI on Vast.ai).
+// Override with VITE_HAKAM_API_URL in .env.local, else uses the fallback.
 export const HAKAM_API_URL =
   (import.meta.env.VITE_HAKAM_API_URL as string | undefined)?.replace(/\/$/, "") ||
-  "http://localhost:8000";
+  "http://81.166.162.13:13157";
 
 export type ChatMessage = {
   id: string;
@@ -10,14 +10,16 @@ export type ChatMessage = {
   content: string;
 };
 
-export async function uploadVideo(file: File): Promise<{ session_id: string }> {
+export async function uploadVideo(
+  file: File,
+): Promise<{ session_id: string; video_url?: string }> {
   const fd = new FormData();
   fd.append("file", file);
   const res = await fetch(`${HAKAM_API_URL}/api/upload-video`, {
     method: "POST",
     body: fd,
   });
-  if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
   return res.json();
 }
 
@@ -30,6 +32,6 @@ export async function sendChat(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, query }),
   });
-  if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
+  if (!res.ok) throw new Error(`Chat failed (${res.status})`);
   return res.json();
 }

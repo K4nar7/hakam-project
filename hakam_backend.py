@@ -27,7 +27,8 @@ import cv2
 import torch
 from PIL import Image
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -43,6 +44,10 @@ BASE_MODEL  = "Qwen/Qwen3.5-0.8B"
 LORA_REPO   = "ananas0/qwen3.5-0.8b-sportsqa-distill-lora"
 MAX_FILE_MB = 200
 MAX_FRAMES  = 8       # uniform sample fed to the VLM per request
+# Public base URL for the server — used to build video_url in upload responses.
+# Override with the PUBLIC_BASE_URL env var if your server is behind a proxy.
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://81.166.162.13:13161").rstrip("/")
+
 UPLOAD_DIR  = Path(tempfile.gettempdir()) / "hakam_uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
@@ -50,6 +55,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # FastAPI app
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Hakam Multimodal Backend")
+
+# Serve uploaded videos as static files at /videos/<filename>
+app.mount("/videos", StaticFiles(directory=str(UPLOAD_DIR)), name="videos")
 
 app.add_middleware(
     CORSMiddleware,
@@ -243,6 +251,7 @@ class ChatResponse(BaseModel):
 
 class UploadResponse(BaseModel):
     session_id: str
+    video_url: str
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +286,9 @@ async def upload_video(file: UploadFile = File(...)):
             out.write(chunk)
 
     SESSIONS[session_id] = {"path": str(dest), "history": []}
-    return UploadResponse(session_id=session_id)
+    # Build the public stream URL so the frontend can optionally use it
+    video_url = f"{PUBLIC_BASE_URL}/videos/{dest.name}"
+    return UploadResponse(session_id=session_id, video_url=video_url)
 
 
 @app.post("/api/chat", response_model=ChatResponse)
